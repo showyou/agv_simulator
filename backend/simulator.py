@@ -40,7 +40,12 @@ def _bfs_route(
     return []
 
 
-def _make_initial_state() -> SimState:
+def _make_initial_state(seed: int | None = None) -> tuple[SimState, int]:
+    """初期状態を生成する。seed を返すことで再現可能にする。"""
+    if seed is None:
+        seed = random.randint(0, 2**31 - 1)
+    rng = random.Random(seed)
+
     map_cfg = MapConfig(
         width=config.MAP_WIDTH,
         height=config.MAP_HEIGHT,
@@ -48,8 +53,8 @@ def _make_initial_state() -> SimState:
         warehouse_pos=(45, 45),
         customer_positions=[
             (
-                random.randint(5, config.MAP_WIDTH - 5),
-                random.randint(5, config.MAP_HEIGHT - 5),
+                rng.randint(5, config.MAP_WIDTH - 5),
+                rng.randint(5, config.MAP_HEIGHT - 5),
             )
             for _ in range(config.NUM_CUSTOMERS)
         ],
@@ -58,7 +63,6 @@ def _make_initial_state() -> SimState:
     agvs: dict[str, AGV] = {}
     for i in range(config.NUM_AGVS):
         agv_id = f"agv-{i + 1:03d}"
-        # 商店付近に初期配置
         pos = (map_cfg.store_pos[0] + i, map_cfg.store_pos[1])
         agvs[agv_id] = AGV(
             id=agv_id,
@@ -69,12 +73,12 @@ def _make_initial_state() -> SimState:
 
     state = SimState(map=map_cfg, agvs=agvs)
     state.stats = {"delivered": 0, "pending": 0, "failed": 0, "battery_dead": 0}
-    return state
+    return state, seed
 
 
 class Simulator:
     def __init__(self) -> None:
-        self.state: SimState = _make_initial_state()
+        self.state, self.current_seed = _make_initial_state()
         self._task: asyncio.Task | None = None
         self._broadcast_cb: Callable[[dict], Awaitable[None]] | None = None
         self._order_counter = 0
@@ -96,9 +100,9 @@ class Simulator:
             self._task.cancel()
             self._task = None
 
-    def reset(self) -> None:
+    def reset(self, seed: int | None = None) -> None:
         self.stop()
-        self.state = _make_initial_state()
+        self.state, self.current_seed = _make_initial_state(seed)
         self._order_counter = 0  # order IDをリセット (#3)
 
     def add_order(self, customer_pos: tuple[int, int] | None = None, item: str | None = None) -> Order:
@@ -138,6 +142,27 @@ class Simulator:
             config.AGV_SPEED = float(data["agv_speed"])
             for agv in self.state.agvs.values():
                 agv.speed = config.AGV_SPEED
+        if "num_agvs" in data:
+            self._apply_num_agvs(int(data["num_agvs"]))
+
+    def _apply_num_agvs(self, n: int) -> None:
+        """AGV台数をn台に増減する。既存AGVの状態は維持する。"""
+        n = max(1, min(n, 20))
+        current = list(self.state.agvs.keys())
+        # 追加
+        for i in range(len(current) + 1, n + 1):
+            agv_id = f"agv-{i:03d}"
+            pos = (self.state.map.store_pos[0] + (i - 1), self.state.map.store_pos[1])
+            self.state.agvs[agv_id] = AGV(id=agv_id, pos=pos, speed=config.AGV_SPEED, battery=1.0)
+        # 削減（末尾から）
+        while len(self.state.agvs) > n:
+            agv_id = f"agv-{len(self.state.agvs):03d}"
+            removed = self.state.agvs.pop(agv_id, None)
+            if removed and removed.cargo:
+                order = self.state.orders.get(removed.cargo)
+                if order:
+                    order.status = OrderStatus.pending
+                    order.assigned_agv = None
 
     # ---- シミュレーションループ ----
 

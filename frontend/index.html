@@ -231,6 +231,27 @@
         <input type="range" id="sl-order" min="3" max="30" step="1" value="10" />
         <span id="sl-order-val">10</span>
       </div>
+      <div class="slider-row">
+        <label>AGV台数</label>
+        <input type="range" id="sl-agvs" min="1" max="20" step="1" value="5" />
+        <span id="sl-agvs-val">5</span>
+      </div>
+
+      <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:8px;">
+        <div style="font-size:11px; color:#aaa; margin-bottom:4px;">シード値</div>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <input type="number" id="seed-input" placeholder="自動" min="0" max="2147483647"
+            style="flex:1; background:#111; color:#e0e0e0; border:1px solid var(--border);
+                   border-radius:4px; padding:4px 6px; font-size:11px;" />
+          <button id="btn-reset-seed" style="flex:0 0 auto; padding:4px 8px; font-size:11px;
+            background:#37474f; color:#fff; border:1px solid var(--border); border-radius:4px; cursor:pointer;">
+            適用
+          </button>
+        </div>
+        <div style="font-size:10px; color:#888; margin-top:4px;">
+          現在: <span id="current-seed" style="color:#64b5f6; font-family:monospace;">-</span>
+        </div>
+      </div>
     </div>
 
     <!-- 統計 -->
@@ -301,11 +322,23 @@
 
   document.getElementById("btn-start").addEventListener("click", () => api("POST", "/start"));
   document.getElementById("btn-stop").addEventListener("click", () => api("POST", "/stop"));
-  document.getElementById("btn-reset").addEventListener("click", async () => {
-    await api("POST", "/reset");
+
+  async function doReset(seed) {
+    const body = seed != null ? { seed } : {};
+    const res = await api("POST", "/reset", body);
     document.getElementById("log-panel").innerHTML = "";
     lastLogTick = -1;
     prevDelivered = 0;
+    if (res.seed != null) {
+      document.getElementById("current-seed").textContent = res.seed;
+      document.getElementById("seed-input").placeholder = res.seed;
+    }
+  }
+
+  document.getElementById("btn-reset").addEventListener("click", () => doReset(null));
+  document.getElementById("btn-reset-seed").addEventListener("click", () => {
+    const val = document.getElementById("seed-input").value.trim();
+    doReset(val !== "" ? parseInt(val) : null);
   });
   document.getElementById("btn-order").addEventListener("click", () => api("POST", "/order", {}));
 
@@ -321,6 +354,7 @@
   }
   sliderSetup("sl-tick", "sl-tick-val", "tick_interval", parseFloat);
   sliderSetup("sl-order", "sl-order-val", "order_spawn_interval", parseInt);
+  sliderSetup("sl-agvs", "sl-agvs-val", "num_agvs", parseInt);
 
   // アニメーションループ（配送エフェクト用）
   function animFrame() {

@@ -29,6 +29,10 @@ function connectWS() {
       renderMap(latestState);
       updateStats(latestState);
       appendLog(latestState);
+      if (latestState.seed != null) {
+        const el = document.getElementById("current-seed");
+        if (el) el.textContent = latestState.seed;
+      }
     } catch (e) {
       console.error("[WS] parse error", e);
     }

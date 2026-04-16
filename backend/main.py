@@ -58,7 +58,9 @@ async def root():
 
 @app.get("/state")
 async def get_state():
-    return sim.state.to_dict()
+    data = sim.state.to_dict()
+    data["seed"] = sim.current_seed
+    return data
 
 @app.post("/start")
 async def start():
@@ -71,10 +73,13 @@ async def stop():
     return {"status": "stopped"}
 
 @app.post("/reset")
-async def reset():
-    sim.reset()
+async def reset(body: dict = {}):
+    seed = body.get("seed")
+    if seed is not None:
+        seed = int(seed)
+    sim.reset(seed=seed)
     sim.set_broadcast(manager.broadcast)
-    return {"status": "reset"}
+    return {"status": "reset", "seed": sim.current_seed}
 
 @app.post("/order")
 async def add_order(body: dict = {}):
