@@ -174,9 +174,48 @@ class Simulator:
             1 for o in state.orders.values() if o.status == OrderStatus.failed
         )
 
+    def _needs_charge(self, agv: AGV) -> bool:
+        return agv.battery <= config.CHARGE_THRESHOLD
+
+    def _send_to_charge(self, agv: AGV) -> None:
+        """倉庫へ充電に向かわせる。"""
+        warehouse = self.state.map.warehouse_pos
+        if agv.pos == warehouse:
+            agv.status = AGVStatus.charging
+            agv.route = []
+        else:
+            agv.route = _bfs_route(agv.pos, warehouse, self.state.map.width, self.state.map.height)
+            agv.status = AGVStatus.charging
+
+    def _send_to_store(self, agv: AGV) -> None:
+        """商店へ帰還させる。"""
+        store = self.state.map.store_pos
+        agv.route = _bfs_route(agv.pos, store, self.state.map.width, self.state.map.height)
+        agv.status = AGVStatus.moving if agv.route else AGVStatus.idle
+
     def _move_agvs(self) -> None:
         for agv in self.state.agvs.values():
-            # バッテリー消費
+
+            # --- 充電中 ---
+            if agv.status == AGVStatus.charging:
+                if agv.pos == self.state.map.warehouse_pos and not agv.route:
+                    # 倉庫に滞在中: バッテリー充電
+                    agv.battery = min(1.0, agv.battery + config.CHARGE_RATE)
+                    if agv.battery >= config.CHARGE_FULL:
+                        self._log(f"AGV {agv.id} 充電完了 ({agv.battery:.0%}) → 商店へ帰還")
+                        self._send_to_store(agv)
+                    continue
+                # 倉庫へ移動中（充電ステータスのまま走行）
+                agv.battery = max(0.0, agv.battery - config.AGV_BATTERY_DRAIN)
+                if agv.battery <= 0:
+                    agv.route = []
+                    self._log(f"AGV {agv.id} 充電移動中にバッテリー切れ → その場で停止")
+                    continue
+                if agv.route:
+                    agv.pos = agv.route.pop(0)
+                continue
+
+            # --- バッテリー消費（moving / delivering） ---
             if agv.status != AGVStatus.idle:
                 agv.battery = max(0.0, agv.battery - config.AGV_BATTERY_DRAIN)
                 if agv.battery <= 0:
@@ -190,29 +229,42 @@ class Simulator:
                     agv.cargo = None
                     continue
 
+            # --- idle で低バッテリー → 充電へ ---
+            if agv.status == AGVStatus.idle and self._needs_charge(agv):
+                self._log(f"AGV {agv.id} 低バッテリー ({agv.battery:.0%}) → 充電へ")
+                self._send_to_charge(agv)
+                continue
+
             if not agv.route:
                 if agv.status in (AGVStatus.moving, AGVStatus.delivering):
                     agv.status = AGVStatus.idle
                 continue
 
-            # 次の座標へ移動
+            # --- 次の座標へ移動 ---
             next_pos = agv.route.pop(0)
             agv.pos = next_pos
 
             # 目的地到着チェック（routeが空になった）
-            if not agv.route and agv.cargo:
-                order = self.state.orders.get(agv.cargo)
-                if order and agv.pos == order.customer_pos:
-                    # 配送完了
-                    order.status = OrderStatus.delivered
-                    self._log(f"AGV {agv.id} 配送完了: {agv.cargo} → {agv.pos}")
-                    agv.cargo = None
-                    # 帰還ルートを設定。moving にして Feasibility 対象外 & バッテリー消費させる (#2, #4)
-                    agv.route = _bfs_route(
-                        agv.pos, self.state.map.store_pos,
-                        self.state.map.width, self.state.map.height
-                    )
-                    agv.status = AGVStatus.moving if agv.route else AGVStatus.idle
+            if not agv.route:
+                if agv.status == AGVStatus.moving:
+                    # 商店へ帰還完了
+                    if self._needs_charge(agv):
+                        self._log(f"AGV {agv.id} 帰還完了、低バッテリー ({agv.battery:.0%}) → 充電へ")
+                        self._send_to_charge(agv)
+                    else:
+                        agv.status = AGVStatus.idle
+
+                elif agv.status == AGVStatus.delivering and agv.cargo:
+                    order = self.state.orders.get(agv.cargo)
+                    if order and agv.pos == order.customer_pos:
+                        order.status = OrderStatus.delivered
+                        self._log(f"AGV {agv.id} 配送完了: {agv.cargo} → {agv.pos}")
+                        agv.cargo = None
+                        if self._needs_charge(agv):
+                            self._log(f"AGV {agv.id} 低バッテリー ({agv.battery:.0%}) → 充電へ")
+                            self._send_to_charge(agv)
+                        else:
+                            self._send_to_store(agv)
 
     # ---- エージェント（同期版スケルトン） ----
 

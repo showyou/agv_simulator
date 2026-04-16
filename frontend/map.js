@@ -199,9 +199,13 @@ function updateStats(state) {
   setEl("stat-tick", state.tick);
 
   const activeAGVs = Object.values(state.agvs).filter(
-    (a) => a.status !== "idle"
+    (a) => a.status === "moving" || a.status === "delivering"
+  ).length;
+  const chargingAGVs = Object.values(state.agvs).filter(
+    (a) => a.status === "charging"
   ).length;
   setEl("stat-active-agvs", activeAGVs);
+  setEl("stat-charging", chargingAGVs);
 
   // 配送完了エフェクトのトリガー
   if (s.delivered > prevDelivered) {
