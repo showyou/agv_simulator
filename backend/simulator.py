@@ -162,6 +162,7 @@ class Simulator:
         # エージェント処理（同期簡易版）
         self._run_feasibility()
         self._run_debugger()
+        self._run_idle_charge()  # 手が空いたAGVは充電へ (#9)
 
         # 統計更新
         state.stats["delivered"] = sum(
@@ -344,6 +345,17 @@ class Simulator:
             if agv.status == AGVStatus.idle and agv.cargo != order.id:
                 self._log(f"[Debugger] 異常検知: {order.id} → failed に変更")
                 order.status = OrderStatus.failed
+
+    def _run_idle_charge(self) -> None:
+        """手が空いているAGVをプロアクティブに充電へ向かわせる (#9)。
+        Feasibility で注文が割り当てられなかった idle AGV が対象。"""
+        for agv in self.state.agvs.values():
+            if agv.status != AGVStatus.idle or agv.cargo is not None:
+                continue
+            if agv.battery >= config.CHARGE_FULL:
+                continue
+            self._log(f"AGV {agv.id} 待機中 ({agv.battery:.0%}) → 充電へ")
+            self._send_to_charge(agv)
 
     def _log(self, message: str) -> None:
         event = {"tick": self.state.tick, "message": message, "ts": time.time()}
