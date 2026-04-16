@@ -99,6 +99,7 @@ class Simulator:
     def reset(self) -> None:
         self.stop()
         self.state = _make_initial_state()
+        self._order_counter = 0  # order IDをリセット (#3)
 
     def add_order(self, customer_pos: tuple[int, int] | None = None, item: str | None = None) -> Order:
         self._order_counter += 1
@@ -206,12 +207,12 @@ class Simulator:
                     order.status = OrderStatus.delivered
                     self._log(f"AGV {agv.id} 配送完了: {agv.cargo} → {agv.pos}")
                     agv.cargo = None
-                    agv.status = AGVStatus.idle
-                    # 帰還ルートを設定
+                    # 帰還ルートを設定。moving にして Feasibility 対象外 & バッテリー消費させる (#2, #4)
                     agv.route = _bfs_route(
                         agv.pos, self.state.map.store_pos,
                         self.state.map.width, self.state.map.height
                     )
+                    agv.status = AGVStatus.moving if agv.route else AGVStatus.idle
 
     # ---- エージェント（同期版スケルトン） ----
 
