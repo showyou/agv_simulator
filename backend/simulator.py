@@ -177,6 +177,14 @@ class Simulator:
     def _needs_charge(self, agv: AGV) -> bool:
         return agv.battery <= config.CHARGE_THRESHOLD
 
+    def _must_return_to_charge(self, agv: AGV) -> bool:
+        """現在地から倉庫まで辿り着けるバッテリーが残っているか判定する。
+        マンハッタン距離 × drain × 安全係数 を下回ったら強制帰還。"""
+        wx, wy = self.state.map.warehouse_pos
+        dist = abs(agv.pos[0] - wx) + abs(agv.pos[1] - wy)
+        needed = dist * config.AGV_BATTERY_DRAIN * config.CHARGE_MARGIN
+        return agv.battery <= needed
+
     def _send_to_charge(self, agv: AGV) -> None:
         """倉庫へ充電に向かわせる。"""
         warehouse = self.state.map.warehouse_pos
@@ -232,14 +240,20 @@ class Simulator:
                         self._log(f"[違反] AGV {agv.id} バッテリー切れ")
                     agv.cargo = None
                     continue
-                # 危険域に入ったら配送・移動を中断して充電へ (#6)
-                if agv.battery <= config.CHARGE_ABORT_THRESHOLD:
+                # 距離ベースの動的チェック: 倉庫まで辿り着けなくなる前に強制帰還 (#8)
+                # フォールバックとして固定閾値 CHARGE_ABORT_THRESHOLD も残す (#6)
+                if self._must_return_to_charge(agv) or agv.battery <= config.CHARGE_ABORT_THRESHOLD:
+                    wx, wy = self.state.map.warehouse_pos
+                    dist = abs(agv.pos[0] - wx) + abs(agv.pos[1] - wy)
+                    reason = f"倉庫まで{dist}歩・残量{agv.battery:.0%}" if self._must_return_to_charge(agv) else f"残量{agv.battery:.0%}"
                     if agv.cargo:
                         order = self.state.orders.get(agv.cargo)
                         if order:
-                            order.status = OrderStatus.pending  # 再度 pending に戻す
+                            order.status = OrderStatus.pending
                             order.assigned_agv = None
-                            self._log(f"AGV {agv.id} 危険バッテリー ({agv.battery:.0%})、{agv.cargo} を差し戻し → 充電へ")
+                            self._log(f"AGV {agv.id} 強制帰還({reason})、{agv.cargo} を差し戻し → 充電へ")
+                    else:
+                        self._log(f"AGV {agv.id} 強制帰還({reason}) → 充電へ")
                     agv.cargo = None
                     self._send_to_charge(agv)
                     continue
