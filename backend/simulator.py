@@ -222,7 +222,7 @@ class Simulator:
                 continue
             idle_agvs = [
                 agv for agv in self.state.agvs.values()
-                if agv.status == AGVStatus.idle and agv.cargo is None
+                if agv.status == AGVStatus.idle and agv.cargo is None and agv.battery > 0.05
             ]
             if not idle_agvs:
                 continue
