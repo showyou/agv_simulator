@@ -68,7 +68,7 @@ def _make_initial_state() -> SimState:
         )
 
     state = SimState(map=map_cfg, agvs=agvs)
-    state.stats = {"delivered": 0, "pending": 0, "failed": 0}
+    state.stats = {"delivered": 0, "pending": 0, "failed": 0, "battery_dead": 0}
     return state
 
 
@@ -209,7 +209,8 @@ class Simulator:
                 agv.battery = max(0.0, agv.battery - config.AGV_BATTERY_DRAIN)
                 if agv.battery <= 0:
                     agv.route = []
-                    self._log(f"AGV {agv.id} 充電移動中にバッテリー切れ → その場で停止")
+                    self.state.stats["battery_dead"] += 1
+                    self._log(f"[違反] AGV {agv.id} 充電移動中にバッテリー切れ → その場で停止")
                     continue
                 if agv.route:
                     agv.pos = agv.route.pop(0)
@@ -221,11 +222,14 @@ class Simulator:
                 if agv.battery <= 0:
                     agv.status = AGVStatus.idle
                     agv.route = []
+                    self.state.stats["battery_dead"] += 1
                     if agv.cargo:
                         order = self.state.orders.get(agv.cargo)
                         if order:
                             order.status = OrderStatus.failed
-                            self._log(f"AGV {agv.id} バッテリー切れ: {agv.cargo} 配送失敗")
+                            self._log(f"[違反] AGV {agv.id} バッテリー切れ: {agv.cargo} 配送失敗")
+                    else:
+                        self._log(f"[違反] AGV {agv.id} バッテリー切れ")
                     agv.cargo = None
                     continue
                 # 危険域に入ったら配送・移動を中断して充電へ (#6)

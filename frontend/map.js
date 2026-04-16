@@ -206,6 +206,7 @@ function updateStats(state) {
   ).length;
   setEl("stat-active-agvs", activeAGVs);
   setEl("stat-charging", chargingAGVs);
+  setEl("stat-battery-dead", s.battery_dead ?? 0);
 
   // 配送完了エフェクトのトリガー
   if (s.delivered > prevDelivered) {
