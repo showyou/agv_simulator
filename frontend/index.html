@@ -232,6 +232,30 @@
     }
     footer span { color: #aaa; }
     footer strong { color: var(--text); }
+
+    /* オプティマイザ 計算中表示 */
+    .opt-running-banner {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: #0d2a4a;
+      border: 1px solid #1565c0;
+      border-radius: 4px;
+      padding: 6px 10px;
+      margin-top: 6px;
+      font-size: 11px;
+      color: #90caf9;
+    }
+    .opt-running-banner.visible { display: flex; }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid #1565c0;
+      border-top-color: #90caf9;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -334,7 +358,11 @@
               実行
             </button>
           </div>
-          <div id="opt-status" style="font-size:10px; margin-top:6px; color:#aaa;">待機中</div>
+          <div id="opt-running-banner" class="opt-running-banner">
+            <div class="spinner"></div>
+            <span id="opt-running-msg">計算中...</span>
+          </div>
+          <div id="opt-status" style="font-size:10px; margin-top:6px; color:#aaa;"></div>
           <div id="opt-progress" style="font-size:10px; margin-top:4px; color:#ccc; max-height:80px; overflow-y:auto;"></div>
           <div id="opt-result" style="font-size:12px; font-weight:bold; margin-top:4px; display:none;"></div>
         </div>
@@ -432,7 +460,9 @@
     if (!seedVal) { alert("シード値を入力してください"); return; }
     const seed = parseInt(seedVal);
 
-    document.getElementById("opt-status").textContent = "実行中...";
+    document.getElementById("opt-running-banner").classList.add("visible");
+    document.getElementById("opt-running-msg").textContent = `計算中... (seed: ${seed})`;
+    document.getElementById("opt-status").textContent = "";
     document.getElementById("opt-progress").innerHTML = "";
     document.getElementById("opt-result").style.display = "none";
     document.getElementById("btn-optimize").disabled = true;
@@ -456,6 +486,7 @@
       clearInterval(optTimer);
       optTimer = null;
       document.getElementById("btn-optimize").disabled = false;
+      document.getElementById("opt-running-banner").classList.remove("visible");
       const r = data.result;
       const statusEl = document.getElementById("opt-status");
       const resultEl = document.getElementById("opt-result");
