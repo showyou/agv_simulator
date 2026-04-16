@@ -1,13 +1,16 @@
 from __future__ import annotations
+import asyncio
 import json
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.simulator import Simulator
+from backend.optimizer import optimize as run_optimize, OptimizeResult
 
 # ---- シミュレータのシングルトン ----
 sim = Simulator()
@@ -38,10 +41,15 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# ---- オプティマイザ状態 ----
+_optimizer_executor = ThreadPoolExecutor(max_workers=1)
+_optimize_state: dict = {"status": "idle", "result": None, "progress": []}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     sim.set_broadcast(manager.broadcast)
     yield
+    _optimizer_executor.shutdown(wait=False)
 
 app = FastAPI(title="Distribution Sim", lifespan=lifespan)
 
@@ -101,6 +109,37 @@ async def get_config():
 async def update_config(body: dict):
     sim.update_config(body)
     return sim.get_config()
+
+
+# ---- オプティマイザ ----
+
+@app.post("/optimize")
+async def start_optimize(body: dict):
+    if _optimize_state["status"] == "running":
+        return {"error": "already running"}
+    seed = int(body.get("seed", 0))
+    _optimize_state.update({"status": "running", "result": None, "progress": [], "seed": seed})
+
+    def _run():
+        def cb(d):
+            _optimize_state["progress"].append(d)
+        result = run_optimize(seed, progress_cb=cb)
+        _optimize_state["status"] = "done"
+        _optimize_state["result"] = {
+            "seed": result.seed,
+            "min_agvs": result.min_agvs,
+            "elapsed_sec": round(result.elapsed_sec, 2),
+            "iterations": result.iterations,
+            "detail": result.detail,
+        }
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(_optimizer_executor, _run)
+    return {"status": "started", "seed": seed}
+
+@app.get("/optimize/result")
+async def get_optimize_result():
+    return _optimize_state
 
 
 # ---- WebSocket ----

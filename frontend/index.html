@@ -321,6 +321,23 @@
           </div>
           <div class="seed-current">現在: <span id="current-seed">-</span></div>
         </div>
+
+        <div style="border-top:1px solid var(--border); padding-top:8px;">
+          <div class="section-label">オプティマイザ</div>
+          <div style="font-size:10px; color:#888; margin-bottom:4px;">
+            指定シードで10000tick・待機中≤100を満たす最小AGV台数を求める
+          </div>
+          <div class="seed-row">
+            <input type="number" id="opt-seed-input" placeholder="シード値" min="0" max="2147483647"
+              style="flex:1;" />
+            <button id="btn-optimize" style="background:#1565c0; color:#fff; flex:0 0 auto; padding:4px 8px; font-size:11px;">
+              実行
+            </button>
+          </div>
+          <div id="opt-status" style="font-size:10px; margin-top:6px; color:#aaa;">待機中</div>
+          <div id="opt-progress" style="font-size:10px; margin-top:4px; color:#ccc; max-height:80px; overflow-y:auto;"></div>
+          <div id="opt-result" style="font-size:12px; font-weight:bold; margin-top:4px; display:none;"></div>
+        </div>
       </div>
     </div>
 
@@ -406,6 +423,54 @@
   sliderSetup("sl-tick",  "sl-tick-val",  "tick_interval",       parseFloat);
   sliderSetup("sl-order", "sl-order-val", "order_spawn_interval", parseInt);
   sliderSetup("sl-agvs",  "sl-agvs-val",  "num_agvs",            parseInt);
+
+  // ---- オプティマイザ ----
+  let optTimer = null;
+
+  document.getElementById("btn-optimize").addEventListener("click", async () => {
+    const seedVal = document.getElementById("opt-seed-input").value.trim();
+    if (!seedVal) { alert("シード値を入力してください"); return; }
+    const seed = parseInt(seedVal);
+
+    document.getElementById("opt-status").textContent = "実行中...";
+    document.getElementById("opt-progress").innerHTML = "";
+    document.getElementById("opt-result").style.display = "none";
+    document.getElementById("btn-optimize").disabled = true;
+
+    await api("POST", "/optimize", { seed });
+    if (optTimer) clearInterval(optTimer);
+    optTimer = setInterval(pollOptimize, 1500);
+  });
+
+  async function pollOptimize() {
+    const data = await api("GET", "/optimize/result");
+    const prog = document.getElementById("opt-progress");
+    const newRows = data.progress.slice(prog.children.length);
+    for (const d of newRows) {
+      const div = document.createElement("div");
+      div.textContent = `  ${d.num_agvs}台 → 最大待機${d.max_pending} ${d.ok ? "✓" : "✗"}`;
+      div.style.color = d.ok ? "#9ec" : "#f88";
+      prog.appendChild(div);
+    }
+    if (data.status === "done") {
+      clearInterval(optTimer);
+      optTimer = null;
+      document.getElementById("btn-optimize").disabled = false;
+      const r = data.result;
+      const statusEl = document.getElementById("opt-status");
+      const resultEl = document.getElementById("opt-result");
+      if (r.min_agvs != null) {
+        statusEl.textContent = `完了 (${r.elapsed_sec}秒 / ${r.iterations}回試行)`;
+        resultEl.textContent = `最小AGV台数: ${r.min_agvs} 台`;
+        resultEl.style.color = "#4caf50";
+      } else {
+        statusEl.textContent = `完了 (${r.elapsed_sec}秒)`;
+        resultEl.textContent = `${30}台以内では解なし`;
+        resultEl.style.color = "#f44336";
+      }
+      resultEl.style.display = "block";
+    }
+  }
 
   // ---- アニメーションループ ----
   function animFrame() {
