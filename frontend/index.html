@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>流通シミュレータ</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --panel: #16213e;
+      --accent: #0f3460;
+      --text: #e0e0e0;
+      --border: #2a2a4a;
+      --ok: #4caf50;
+      --ng: #f44336;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", sans-serif;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      background: var(--accent);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 { font-size: 16px; font-weight: bold; letter-spacing: 1px; }
+    .ws-indicator { font-size: 11px; }
+    .status-ok { color: var(--ok); }
+    .status-ng { color: var(--ng); }
+
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* 左: マップ */
+    .map-area {
+      flex: 1;
+      overflow: auto;
+      padding: 8px;
+      background: #111122;
+    }
+    #map-canvas {
+      display: block;
+      background: #1a1a2e;
+    }
+
+    /* 右: サイドパネル */
+    .sidebar {
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    /* コントロール */
+    .controls {
+      padding: 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .controls h2 { font-size: 12px; color: #aaa; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+    .btn-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    button {
+      flex: 1;
+      padding: 6px 0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    #btn-start { background: #2e7d32; color: #fff; }
+    #btn-stop  { background: #b71c1c; color: #fff; }
+    #btn-reset { background: #37474f; color: #fff; }
+    #btn-order { background: #6a1b9a; color: #fff; width: 100%; margin-top: 4px; }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .slider-row label { width: 90px; font-size: 11px; color: #aaa; }
+    .slider-row input[type=range] { flex: 1; }
+    .slider-row span { width: 30px; text-align: right; font-size: 11px; }
+
+    /* 統計 */
+    .stats {
+      padding: 10px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .stat-item { display: flex; flex-direction: column; align-items: center; }
+    .stat-label { font-size: 10px; color: #888; }
+    .stat-value { font-size: 20px; font-weight: bold; }
+    .stat-delivered .stat-value { color: var(--ok); }
+    .stat-pending .stat-value { color: #FFD700; }
+    .stat-failed .stat-value { color: var(--ng); }
+    .stat-tick .stat-value { color: #64b5f6; }
+
+    /* AGVバッテリーパネル */
+    .agv-battery-section {
+      padding: 8px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .agv-battery-section h2 { font-size: 11px; color: #aaa; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+    .agv-battery-list { display: flex; flex-direction: column; gap: 5px; }
+    .agv-battery-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+    }
+    .agv-battery-label {
+      width: 58px;
+      color: #bbb;
+      white-space: nowrap;
+    }
+    .agv-battery-bar-bg {
+      flex: 1;
+      height: 8px;
+      background: #2a2a4a;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .agv-battery-bar {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s ease, background-color 0.4s ease;
+    }
+    .agv-battery-pct {
+      width: 32px;
+      text-align: right;
+      color: #ccc;
+    }
+    .agv-status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ログパネル */
+    .log-section {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 8px;
+    }
+    .log-section h2 { font-size: 11px; color: #aaa; margin-bottom: 6px; text-transform: uppercase; }
+    #log-panel {
+      flex: 1;
+      overflow-y: auto;
+      font-size: 11px;
+      line-height: 1.6;
+      color: #ccc;
+    }
+    .log-entry {
+      padding: 2px 0;
+      border-bottom: 1px solid #1e1e3a;
+    }
+    .log-entry:nth-child(odd) { color: #9ec; }
+
+    /* 下部ステータスバー */
+    footer {
+      background: var(--accent);
+      padding: 4px 16px;
+      display: flex;
+      gap: 20px;
+      font-size: 11px;
+      border-top: 1px solid var(--border);
+    }
+    footer span { color: #aaa; }
+    footer strong { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>流通シミュレータ</h1>
+  <div class="ws-indicator">WS: <span id="ws-status" class="status-ng">切断</span></div>
+</header>
+
+<div class="main">
+  <!-- 左: マップ -->
+  <div class="map-area">
+    <canvas id="map-canvas"></canvas>
+  </div>
+
+  <!-- 右: サイドパネル -->
+  <div class="sidebar">
+    <!-- コントロール -->
+    <div class="controls">
+      <h2>コントロール</h2>
+      <div class="btn-row">
+        <button id="btn-start">▶ 開始</button>
+        <button id="btn-stop">■ 停止</button>
+        <button id="btn-reset">↺ リセット</button>
+      </div>
+      <button id="btn-order">＋ 注文追加</button>
+
+      <div class="slider-row" style="margin-top:10px;">
+        <label>Tick速度(s)</label>
+        <input type="range" id="sl-tick" min="0.1" max="2.0" step="0.1" value="0.5" />
+        <span id="sl-tick-val">0.5</span>
+      </div>
+      <div class="slider-row">
+        <label>注文間隔(tick)</label>
+        <input type="range" id="sl-order" min="3" max="30" step="1" value="10" />
+        <span id="sl-order-val">10</span>
+      </div>
+    </div>
+
+    <!-- 統計 -->
+    <div class="stats">
+      <div class="stat-item stat-delivered">
+        <span class="stat-label">配送完了</span>
+        <span class="stat-value" id="stat-delivered">0</span>
+      </div>
+      <div class="stat-item stat-pending">
+        <span class="stat-label">待機中</span>
+        <span class="stat-value" id="stat-pending">0</span>
+      </div>
+      <div class="stat-item stat-failed">
+        <span class="stat-label">失敗</span>
+        <span class="stat-value" id="stat-failed">0</span>
+      </div>
+      <div class="stat-item stat-tick">
+        <span class="stat-label">Tick</span>
+        <span class="stat-value" id="stat-tick">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">稼働AGV</span>
+        <span class="stat-value" id="stat-active-agvs">0</span>
+      </div>
+    </div>
+
+    <!-- AGVバッテリー -->
+    <div class="agv-battery-section">
+      <h2>AGV バッテリー</h2>
+      <div class="agv-battery-list" id="agv-battery-list"></div>
+    </div>
+
+    <!-- ログ -->
+    <div class="log-section">
+      <h2>イベントログ</h2>
+      <div id="log-panel"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>商店 <strong style="color:#2E75B6;">■</strong></span>
+  <span>倉庫 <strong style="color:#FF8C00;">■</strong></span>
+  <span>顧客 <strong style="color:#70AD47;">●</strong></span>
+  <span>AGV idle <strong style="color:#AAA;">▲</strong></span>
+  <span>AGV moving <strong style="color:#FFD700;">▲</strong></span>
+  <span>AGV delivering <strong style="color:#FF4444;">▲</strong></span>
+</footer>
+
+<script src="/static/map.js"></script>
+<script src="/static/ws.js"></script>
+<script>
+  // ---- ボタン処理 ----
+  async function api(method, path, body) {
+    const opts = { method, headers: { "Content-Type": "application/json" } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    return res.json();
+  }
+
+  document.getElementById("btn-start").addEventListener("click", () => api("POST", "/start"));
+  document.getElementById("btn-stop").addEventListener("click", () => api("POST", "/stop"));
+  document.getElementById("btn-reset").addEventListener("click", async () => {
+    await api("POST", "/reset");
+    document.getElementById("log-panel").innerHTML = "";
+    lastLogTick = -1;
+    prevDelivered = 0;
+  });
+  document.getElementById("btn-order").addEventListener("click", () => api("POST", "/order", {}));
+
+  // ---- スライダー ----
+  function sliderSetup(sliderId, valId, configKey, transform) {
+    const sl = document.getElementById(sliderId);
+    const valEl = document.getElementById(valId);
+    sl.addEventListener("input", () => {
+      const v = transform(sl.value);
+      valEl.textContent = sl.value;
+      api("POST", "/config", { [configKey]: v });
+    });
+  }
+  sliderSetup("sl-tick", "sl-tick-val", "tick_interval", parseFloat);
+  sliderSetup("sl-order", "sl-order-val", "order_spawn_interval", parseInt);
+
+  // アニメーションループ（配送エフェクト用）
+  function animFrame() {
+    if (latestState) {
+      renderMap(latestState);
+    }
+    requestAnimationFrame(animFrame);
+  }
+  requestAnimationFrame(animFrame);
+</script>
+</body>
+</html>
