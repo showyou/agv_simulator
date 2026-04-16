@@ -228,6 +228,17 @@ class Simulator:
                             self._log(f"AGV {agv.id} バッテリー切れ: {agv.cargo} 配送失敗")
                     agv.cargo = None
                     continue
+                # 危険域に入ったら配送・移動を中断して充電へ (#6)
+                if agv.battery <= config.CHARGE_ABORT_THRESHOLD:
+                    if agv.cargo:
+                        order = self.state.orders.get(agv.cargo)
+                        if order:
+                            order.status = OrderStatus.pending  # 再度 pending に戻す
+                            order.assigned_agv = None
+                            self._log(f"AGV {agv.id} 危険バッテリー ({agv.battery:.0%})、{agv.cargo} を差し戻し → 充電へ")
+                    agv.cargo = None
+                    self._send_to_charge(agv)
+                    continue
 
             # --- idle で低バッテリー → 充電へ ---
             if agv.status == AGVStatus.idle and self._needs_charge(agv):
@@ -275,7 +286,8 @@ class Simulator:
                 continue
             idle_agvs = [
                 agv for agv in self.state.agvs.values()
-                if agv.status == AGVStatus.idle and agv.cargo is None and agv.battery > 0.05
+                if agv.status == AGVStatus.idle and agv.cargo is None
+                   and agv.battery > config.CHARGE_REFUSE_THRESHOLD
             ]
             if not idle_agvs:
                 continue
